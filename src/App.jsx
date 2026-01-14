@@ -5,7 +5,7 @@ import './App.css';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/Movie-Link-Updated---Model-6-Final-Project">
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/search" element={<MovieSearch />} />
