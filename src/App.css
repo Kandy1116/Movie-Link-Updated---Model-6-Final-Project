@@ -306,7 +306,8 @@ body {
   width: 100%;
   max-width: 900px;
   border-radius: 16px;
-  overflow: hidden;
+  overflow-y: auto;
+  max-height: 90vh;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9);
   border: 1px solid var(--card-border);
   transform: scale(0.95);
