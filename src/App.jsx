@@ -1,0 +1,370 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import './App.css';
+
+const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY || '';
+
+function App() {
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalData, setModalData] = useState(null);
+
+  const [sort, setSort] = useState('title-asc');
+  const [yearFrom, setYearFrom] = useState('');
+  const [yearTo, setYearTo] = useState('');
+  const [minRating, setMinRating] = useState('0');
+
+  const abortRef = useRef(null);
+  const detailsCache = useRef({});
+
+  function debounce(fn, wait = 300) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+  }
+  const debouncedSearch = useMemo(() => debounce(doSearch, 350), []);
+
+  function toggleFilterPanel() {
+    const panel = document.getElementById('filterPanel');
+    const toggle = document.getElementById('filterToggle');
+    const isOpen = panel?.classList.toggle('open');
+    if (isOpen) {
+      panel?.setAttribute('aria-hidden', 'false');
+      toggle?.setAttribute('aria-expanded', 'true');
+    } else {
+      panel?.setAttribute('aria-hidden', 'true');
+      toggle?.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  async function doSearch(q) {
+    if (!q || q.trim().length < 2) {
+      setItems([]);
+      return;
+    }
+    if (!OMDB_API_KEY) {
+      setItems([]);
+      return;
+    }
+
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+
+    setLoading(true);
+    try {
+      const url = `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&s=${encodeURIComponent(q)}&type=movie&page=1`;
+      const res = await fetch(url, { signal: abortRef.current.signal });
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      if (data.Response === 'True') {
+        setItems(data.Search || []);
+      } else {
+        setItems([]);
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        setItems([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchAndCacheDetails(imdbID) {
+    if (!imdbID) return null;
+    if (detailsCache.current[imdbID]) return detailsCache.current[imdbID];
+    try {
+      const url = `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${imdbID}&plot=short`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const d = await res.json();
+      if (d.Response === 'True') {
+        detailsCache.current[imdbID] = d;
+        return d;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  function parseYearValue(yearStr) {
+    if (!yearStr) return null;
+    const m = String(yearStr).match(/\d{4}/);
+    return m ? parseInt(m[0], 10) : null;
+  }
+
+  function matchesYearFilter(item, from, to) {
+    const y = parseYearValue(item.Year);
+    if (!y) return false;
+    if (from && y < from) return false;
+    if (to && y > to) return false;
+    return true;
+  }
+
+  function matchesRatingFilter(item, minR) {
+    const d = detailsCache.current[item.imdbID];
+    if (d && d.imdbRating && d.imdbRating !== 'N/A') {
+      const val = parseFloat(d.imdbRating);
+      return val >= minR;
+    }
+    fetchAndCacheDetails(item.imdbID).then(() => {}).catch(() => {});
+    return true;
+  }
+
+  const filtered = useMemo(() => {
+    let list = Array.from(items || []);
+    const from = yearFrom ? parseInt(yearFrom, 10) : null;
+    const to = yearTo ? parseInt(yearTo, 10) : null;
+    const minR = minRating ? parseFloat(minRating) : 0;
+
+    if (from || to) {
+      list = list.filter((i) => matchesYearFilter(i, from, to));
+    }
+    if (minR > 0) {
+      list = list.filter((i) => matchesRatingFilter(i, minR));
+    }
+    list.sort((a, b) => {
+      const ta = (a.Title || '').toLowerCase();
+      const tb = (b.Title || '').toLowerCase();
+      if (sort === 'title-asc') return ta < tb ? -1 : ta > tb ? 1 : 0;
+      return ta > tb ? -1 : ta < tb ? 1 : 0;
+    });
+    return list;
+  }, [items, sort, yearFrom, yearTo, minRating]);
+
+  async function openDetails(id) {
+    if (!id || !OMDB_API_KEY) return;
+    setLoading(true);
+    try {
+      const url = `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${id}&plot=full`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Details fetch failed');
+      const d = await res.json();
+      if (d.Response === 'True') {
+        setModalData(d);
+        setModalOpen(true);
+      }
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function clearSearch() {
+    setQuery('');
+    setItems([]);
+  }
+
+  useEffect(() => {
+    const handler = setTimeout(() => debouncedSearch(query), 0);
+    return () => clearTimeout(handler);
+  }, [query]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') setModalOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  return (
+    <>
+      <header className="site-header">
+        <div className="container header-inner">
+          <h1 className="logo">Movie Search</h1>
+          <div className="search-group">
+            <input
+              id="searchInput"
+              type="search"
+              placeholder="Search movies, actors, keywords..."
+              aria-label="Search movies"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button id="clearBtn" title="Clear" onClick={clearSearch}>
+              ✕
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="container">
+        <section className="controls">
+          <button
+            id="filterToggle"
+            className="filter-toggle"
+            aria-expanded="false"
+            aria-controls="filterPanel"
+            onClick={toggleFilterPanel}
+          >
+            Filters ▾
+          </button>
+          <div id="filterPanel" className="filter-panel" aria-hidden="true">
+            <div className="filters">
+              <label className="filter-item">
+                Sort
+                <select id="sortSelect" value={sort} onChange={(e) => setSort(e.target.value)}>
+                  <option value="title-asc">Title A–Z</option>
+                  <option value="title-desc">Title Z–A</option>
+                </select>
+              </label>
+
+              <label className="filter-item">
+                Year: from
+                <input
+                  id="yearFrom"
+                  type="number"
+                  min="1800"
+                  max="2100"
+                  placeholder="e.g. 1990"
+                  value={yearFrom}
+                  onChange={(e) => setYearFrom(e.target.value)}
+                />
+              </label>
+              <label className="filter-item">
+                to
+                <input
+                  id="yearTo"
+                  type="number"
+                  min="1800"
+                  max="2100"
+                  placeholder="e.g. 2025"
+                  value={yearTo}
+                  onChange={(e) => setYearTo(e.target.value)}
+                />
+              </label>
+
+              <label className="filter-item">
+                Min rating
+                <select id="minRating" value={minRating} onChange={(e) => setMinRating(e.target.value)}>
+                  <option value="0">Any</option>
+                  <option value="9">9+</option>
+                  <option value="8">8+</option>
+                  <option value="7">7+</option>
+                  <option value="6">6+</option>
+                  <option value="5">5+</option>
+                </select>
+              </label>
+
+              <div className="filter-actions">
+                <button id="applyFilters" onClick={() => {}}>
+                  Apply
+                </button>
+                <button
+                  id="clearFilters"
+                  onClick={() => {
+                    setSort('title-asc');
+                    setYearFrom('');
+                    setYearTo('');
+                    setMinRating('0');
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="results" className="results-grid" aria-live="polite">
+          {filtered.map((i) => {
+            const poster =
+              i.Poster && i.Poster !== 'N/A'
+                ? i.Poster
+                : 'https://via.placeholder.com/500x750?text=No+Image';
+            const year = i.Year ? `${i.Year}` : '';
+            return (
+              <article
+                className="card"
+                key={i.imdbID}
+                tabIndex={0}
+                onClick={() => openDetails(i.imdbID)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') openDetails(i.imdbID);
+                }}
+              >
+                <img className="poster" src={poster} alt={`${i.Title} poster`} />
+                <div className="info">
+                  <div className="genre">
+                    {detailsCache.current[i.imdbID]?.Genre
+                      ? detailsCache.current[i.imdbID].Genre.split(',').slice(0, 2).join(', ')
+                      : ''}
+                  </div>
+                  <div className="year">{year}</div>
+                  <div className="rating">
+                    {detailsCache.current[i.imdbID]?.imdbRating &&
+                    detailsCache.current[i.imdbID].imdbRating !== 'N/A'
+                      ? `★ ${detailsCache.current[i.imdbID].imdbRating}`
+                      : ''}
+                  </div>
+                  <div className="title">{i.Title}</div>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+
+        {loading && <div id="loading" className="loading">Loading…</div>}
+
+        {modalOpen && modalData && (
+          <div id="modal" className="modal" aria-hidden="false">
+            <div
+              className="modal-backdrop"
+              id="modalBackdrop"
+              onClick={() => setModalOpen(false)}
+            ></div>
+            <dialog className="modal-dialog" id="modalDialog" open>
+              <button
+                className="modal-close"
+                id="modalClose"
+                aria-label="Close"
+                onClick={() => setModalOpen(false)}
+              >
+                ✕
+              </button>
+              <div id="modalContent">
+                <div className="modal-body">
+                  <img
+                    className="modal-poster"
+                    src={
+                      modalData.Poster && modalData.Poster !== 'N/A'
+                        ? modalData.Poster
+                        : 'https://via.placeholder.com/500x750?text=No+Image'
+                    }
+                    alt={`${modalData.Title} poster`}
+                  />
+                  <div>
+                    <div className="modal-title">
+                      {modalData.Title} <span className="year">{modalData.Year || ''}</span>
+                    </div>
+                    <div className="modal-overview">
+                      {modalData.Plot || 'No description available.'}
+                    </div>
+                    <p style={{ marginTop: 12, color: 'var(--muted)' }}>
+                      <strong>Rating:</strong> {modalData.imdbRating || 'N/A'} •{' '}
+                      <strong>Runtime:</strong> {modalData.Runtime || 'N/A'}
+                    </p>
+                    <p style={{ marginTop: 6, color: 'var(--muted)' }}>
+                      <strong>Genre:</strong> {modalData.Genre || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </dialog>
+          </div>
+        )}
+      </main>
+
+      <footer className="site-footer">
+        <div className="container">2025 ©</div>
+      </footer>
+    </>
+  );
+}
+
+export default App;
