@@ -373,6 +373,29 @@ function MovieSearch() {
                         <span>{modalData.Actors}</span>
                       </div>
                     </div>
+
+                    <div style={{ marginTop: '2rem' }}>
+                      <a
+                        href={`https://www.imdb.com/title/${modalData.imdbID}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-block',
+                          backgroundColor: '#f5c518',
+                          color: '#000000',
+                          padding: '0.75rem 1.5rem',
+                          borderRadius: '4px',
+                          textDecoration: 'none',
+                          fontWeight: 'bold',
+                          fontSize: '1rem',
+                          transition: 'background-color 0.2s'
+                        }}
+                        onMouseOver={(e) => e.target.style.backgroundColor = '#e2b616'}
+                        onMouseOut={(e) => e.target.style.backgroundColor = '#f5c518'}
+                      >
+                        View on IMDb ↗
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
