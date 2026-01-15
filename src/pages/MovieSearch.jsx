@@ -147,6 +147,7 @@ function MovieSearch() {
         setModalOpen(true);
       }
     } catch {
+      setModalOpen(false);
     } finally {
       setLoading(false);
     }
@@ -174,9 +175,13 @@ function MovieSearch() {
     <>
       <header className="site-header">
         <div className="container header-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Link to="/" style={{ color: 'white', textDecoration: 'none', fontWeight: 'bold', fontSize: '1.2rem' }}>🏠</Link>
-            <h1 className="logo">Movie Search</h1>
+          <div className="nav-left">
+            <Link to="/" className="nav-home-link">Home</Link>
+            <Link to="/about" className="nav-link">About Us</Link>
+            <Link to="/search" className="nav-link active">Search</Link>
+          </div>
+          <div className="nav-right">
+            <h1 className="logo">Longhorn Film Productions</h1>
           </div>
           <div className="search-group">
             <input
